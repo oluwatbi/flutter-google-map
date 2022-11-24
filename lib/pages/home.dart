@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_google_places/flutter_google_places.dart';
 import 'package:flutter_polyline_points/flutter_polyline_points.dart';
 import 'package:google_map_flutter/credentials.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:location/location.dart';
+import 'package:google_maps_webservice/places.dart';
+import 'package:google_api_headers/google_api_headers.dart';
+import 'package:location/location.dart' as l;
 
 class Home extends StatefulWidget {
   const Home({super.key, required this.title});
@@ -12,14 +15,16 @@ class Home extends StatefulWidget {
   State<Home> createState() => _HomeState();
 }
 
+final globalScaffoldKey = GlobalKey<ScaffoldMessengerState>();
+
 class _HomeState extends State<Home> {
   String? address, dateTime;
   LatLng destination = LatLng(6.647027, 3.374165);
   late GoogleMapController controllerMap;
   List<LatLng> polyLineCoordinates = [];
   Map<String, Marker> pointer = {};
-  LocationData? currentLocation;
-  Location location = Location();
+  l.LocationData? currentLocation;
+  l.Location location = l.Location();
 
   @override
   void didChangeDependencies() {
@@ -33,6 +38,7 @@ class _HomeState extends State<Home> {
   Widget build(BuildContext context) {
     return SafeArea(
       child: Scaffold(
+        key: globalScaffoldKey,
         extendBody: true,
         body: currentLocation == null
             ? Center(
@@ -104,10 +110,67 @@ class _HomeState extends State<Home> {
                       ),
                     ),
                   ),
+                  Positioned(
+                    top: 20,
+                    left: 10,
+                    child: IconButton(
+                        onPressed: () {
+                          searchPlacesBtn();
+                        },
+                        icon: Icon(
+                          Icons.search,
+                          size: 30,
+                        )),
+                  )
                 ],
               ),
       ),
     );
+  }
+
+  Future<void> searchPlacesBtn() async {
+    Prediction? predict = await PlacesAutocomplete.show(
+        strictbounds: false,
+        onError: searchError,
+        context: context,
+        apiKey: google_map_key,
+        hint: "Search places",
+        types: [""],
+        language: 'en',
+        decoration: InputDecoration(
+            hintText: 'Search',
+            focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(20),
+                borderSide: BorderSide(color: Colors.white))),
+        components: [
+          Component(Component.country, "ng"),
+        ]);
+    showPlacesPrediction(predict!, globalScaffoldKey.currentState);
+  }
+
+  void searchError(PlacesAutocompleteResponse response) {
+    globalScaffoldKey.currentState!
+        .showSnackBar(SnackBar(content: Text(response.errorMessage!)));
+  }
+
+  Future<void> showPlacesPrediction(
+      Prediction data, ScaffoldMessengerState? currentState) async {
+    GoogleMapsPlaces places = GoogleMapsPlaces(
+      apiKey: google_map_key,
+      apiHeaders: await GoogleApiHeaders().getHeaders(),
+    );
+
+    PlacesDetailsResponse placesDetailsResponse =
+        await places.getDetailsByPlaceId(data.placeId!);
+
+    final lat = placesDetailsResponse.result.geometry!.location.lat;
+    final lng = placesDetailsResponse.result.geometry!.location.lng;
+
+    // pointer.clear();
+    addPointer('2', LatLng(lat, lng));
+    setState(() {});
+    controllerMap
+        .animateCamera(CameraUpdate.newLatLngZoom(LatLng(lat, lng), 15));
   }
 
   /// Function to handle pointer
@@ -145,14 +208,14 @@ class _HomeState extends State<Home> {
     final hasPermission = await handleLocationPermission();
     try {
       if (!hasPermission) return;
-      LocationData result =
+      l.LocationData result =
           await location.getLocation().then((value) => currentLocation = value);
     } catch (e) {}
   }
 
   Future<bool> handleLocationPermission() async {
     bool serviceEnabled;
-    PermissionStatus permission;
+    l.PermissionStatus permission;
 
     serviceEnabled = await location.serviceEnabled();
     if (!serviceEnabled) {
@@ -162,17 +225,17 @@ class _HomeState extends State<Home> {
               'Location services are disabled. Please enable the services')));
       return false;
     }
-    permission = await Location.instance.hasPermission();
-    if (permission == PermissionStatus.denied) {
-      permission = await Location.instance.requestPermission();
-      if (permission == PermissionStatus.denied) {
+    permission = await l.Location.instance.hasPermission();
+    if (permission == l.PermissionStatus.denied) {
+      permission = await l.Location.instance.requestPermission();
+      if (permission == l.PermissionStatus.denied) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
             backgroundColor: Colors.orange,
             content: Text('Location permissions are denied')));
         return false;
       }
     }
-    if (permission == PermissionStatus.deniedForever) {
+    if (permission == l.PermissionStatus.deniedForever) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           backgroundColor: Colors.orange,
           content: Text(
